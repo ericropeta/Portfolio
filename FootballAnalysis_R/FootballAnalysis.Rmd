@@ -1,0 +1,492 @@
+---
+title: "College Football Analysis"
+author: "Eric Ropeta, Marie Camp, and Jacob Haywood"
+date: "4/27/2020"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: false
+    toc_float: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE, 
+                      warning = FALSE,
+                      comment = NA)
+```
+
+```{r libraries}
+library(ggplot2)
+library(cowplot)
+library(tidyr)
+library(dplyr)
+library(reshape2)
+library(tidyverse)
+library(knitr)
+library(gridExtra)
+```
+# **Introduction**
+
+Our study uses a data set of college football statistics from the 2019 season to explore a few key questions. The data set consists of 146 different statistics for 130 teams. We also added a variable from another source to the data set, in addition to manipulating and transforming the ones already present. 
+
+We formulated three questions to answer using this data set: 1) Given predetermined data, how can we predict a team’s average points per game using their total offensive yards? 2) Which features translate into wins, and does this differ across conferences? 3) What’s the correlation between offensive and defensive performance, and do play styles (offense and defense heavy) differ between conferences?
+
+Much of our analysis dealt with computing and analyzing correlations between variables in the data set. Specific methods included use of correlation matrices and least squares regression lines. We used packages like ggplot2 to create figures of our results, as well as using cowplot, reshape2, tidyverse, knitr, and gridExtra for various computations and dataframe manipulations. 
+
+# **Results**
+
+## Using Predictors to Predict Football Statistics
+
+```{r, echo=FALSE}
+data <- read.csv("CFB2019.csv")
+
+data$Top <- c(rep(0,130))
+data$Top[53] <- 1 #LSU
+data$Top[22] <- 1 #Clemson
+data$Top[78] <- 1 #OSU
+data$Top[35] <- 1 #Georgia
+data$Top[83] <- 1 #Oregon
+data$Top[31] <- 1 #Florida
+data$Top[79] <- 1 #Oklahoma
+data$Top[3] <- 1 #Alabama
+data$Top[85] <- 1 #Penn State
+data$Top[63] <- 1 #Minnesota
+data$Top[129] <- 1 #Wisconsin
+data$Top[76] <- 1 #Notre Dame
+data$Top[12] <- 1 #Baylor
+data$Top[10] <- 1 #Auburn
+data$Top[42] <- 1 #Iowa
+data$Top[116] <- 1 #Utah
+data$Top[57] <- 1 #Memphis
+data$Top[60] <- 1 #Michigan
+data$Top[4] <- 1 #Appelachian State
+data$Top[66] <- 1 #Navy
+data$Top[21] <- 1 #Cincinnati
+data$Top[1] <- 1 #Air Force
+data$Top[13] <- 1 #Boise State
+data$Top[112] <- 1 #UCF
+data$Top[103] <- 1 #Texas
+
+data <- data[sapply(data,is.numeric)]
+```
+
+
+```{r,echo=FALSE}
+corrs <- c()
+for (i in colnames(data)){
+  corrs[i] <- cor(data["Points.Per.Game"],data[i])
+}
+#Off.Rank,  Off.Plays,  Off.Yards  First.Downs
+```
+
+```{r,echo=FALSE}
+x <- data.frame(data$Points.Per.Game,data$Off.Rank,data$Off.Plays,data$Off.Yards,data$First.Downs, data$Top)
+
+pairs(x,pch=19)
+```
+
+
+```{r}
+fit <- lm(Points.Per.Game ~ Off.Rank + Off.Plays + Off.Yards + First.Downs + Top, data = data)
+summary(fit)
+bhat <- coef(fit)
+intercept <- bhat[1] + 5*bhat[2] + 800*bhat[3] + 400*bhat[5] + 1*bhat[6]
+slope <- bhat[4]
+yards <- seq(from=3000,to=9000,by=1)
+
+
+plot(Points.Per.Game ~ Off.Yards, data = data)
+lines(x=yards,y=intercept+yards*slope, col = 2)
+```
+
+
+
+
+
+We decided to use Bayesian statistics to model a linear regression based on highly-correlated predictors. Our predictors were as follows: Offensive Rank, Offensive Plays, Offensive Yards, First Downs, and whether they were ranked on AP Poll. These explanatory variables were chosen due to the results of our correlation test, which stated that these variables correlated the most with our chosen response variable, average points per game. As a result, we were able to model the average points per game for a team that has an offensive rank of 5, has 800 offensive plays, 400 first downs, and is a ranked AP Poll team. We can run this linear regression model for any combination of football statistics to predict our average points per game. Likewise, the same model can be run for any response variable football statistic, not just average points per game, but different predictors must be chosen because the predictors must be highly correlated with the response variable. Thus, another correlation test must be done to choose a new response variable. The visualization techniques we used were very straightforward, with just a regular plot to plot our data points and linear regression model. The only package we used for this question was the dplyr package to filter and sort our initial data set.
+
+
+
+
+  
+## Features of a Team That Translate Into Wins
+
+```{r winning features code, include = FALSE}
+
+# Loads data and splits team and conference into separate columns
+
+CFB <- read.csv("CFB2019.csv", header=TRUE, stringsAsFactors = FALSE)
+# separate team and conference name
+# conference moved to own column (second column), with parentheses stripped
+num_teams <- nrow(CFB)
+all_teams <- character(num_teams)
+all_confs <- character(num_teams)
+for (i in 1:num_teams) {
+  raw <- unlist(strsplit(CFB[i,1], " "))
+  conf_ind <- grep('\\(', raw) # search for starting index of conference
+  if (length(conf_ind) > 1) {
+    conf_ind <- conf_ind[length(conf_ind)] # in the cases of miami(OH) and miami(FL), take the second parentheses
+  }
+  team_name <- paste(raw[1:conf_ind-1], collapse = " ")
+  conference <- paste(raw[conf_ind:length(raw)], collapse = " ")
+  last_p <- nchar(conference) - 1 # index before last parenthesis
+  conference <- substr(conference,2,last_p) # strip parentheses
+  all_teams[i] <- team_name
+  all_confs[i] <- conference
+}
+CFB$Team <- all_teams
+CFB$Conference <- all_confs
+CFB <- CFB[c(1,147,2:146)] # reorder so that conference is second column
+
+# Transform winning record into a win ratio and add to data frame
+
+win_ratios <- numeric(num_teams)
+for (i in 1:num_teams) {
+  gamesplayed <- CFB[i,3]
+  win_loss <- unlist(strsplit(CFB[i,4],""))
+  dash_ind <- grep("-",win_loss)
+  wins <- paste(win_loss[1:dash_ind-1], collapse="")
+  wins <- as.numeric(wins)
+  win_ratios[i] <- round(wins / gamesplayed,2)
+}
+CFB$Win.Ratio <- win_ratios
+CFB <- CFB[c(1:4,148,5:147)] # win ration is 5th column
+
+# Create a data frame with the top 10 varaibles that most correlate to a high winning record
+
+Top10Cor <- function(cfb_df) {
+  CFB_numeric <- cfb_df[,c(5:137,140:148)] #pull only numeric variables
+  corr_values <- round(cor(CFB_numeric[, 1],CFB_numeric), 2) #calculate corr to win ratio
+  names(corr_values) <- colnames(CFB_numeric)
+  corr_values <- abs(corr_values) #absolute values
+  corr_order <- order(corr_values, decreasing = TRUE) # get indices in data set for decreasing order of correlation
+  top10 <- CFB_numeric[c(corr_order[1:11])] #get data for top 10 correlated WIN RATIO IN FIRST COL
+  corr_values <- sort(corr_values, decreasing = TRUE)
+  correlations <- data_frame(row.names = names(corr_values[-1]), corr_values[-1])
+  colnames(correlations) <- c("Feature","Correlation to Wins")
+  return(list(top10,correlations))
+}
+CFB10 <- Top10Cor(CFB)[[1]] # for overall correlations not by conference
+
+# Calculate by conference
+
+# this creates a data frame with each conference as a row
+# columns are labled 1-10 for first through tenth top features
+# the variable names of the top features per conference are recorded in each cell
+conf_names <- unique(CFB$Conference)
+conf10_feature_names <- data.frame(row.names = conf_names)
+for (i in 1:length(conf_names)) {
+  conf10 <- filter(CFB, Conference == conf_names[i]) %>% Top10Cor() 
+  conf10 <- conf10[[1]]
+  conf10_feature_names[i,1:10] <- colnames(conf10[-1])
+}
+colnames(conf10_feature_names) <- c(1,2,3,4,5,6,7,8,9,10)
+
+# tabulate how often each variable appears in each ranking column
+# aka what are the most common features in all of the conference top 10s
+conf10features <- gather(conf10_feature_names) %>% count(value) %>% arrange(desc(n))
+colnames(conf10features) <- c("Feature", "Occurances")
+
+# number of features that appeared exclusively in the conference specific top 10s that weren't in the overall list
+num.exc <- length(setdiff(unique(conf10features$Feature), colnames(CFB10[-1])))
+
+# tabulates how many times each "exlclusive" feature appears in all the conference specific lists
+conf10features.exc <- gather(conf10_feature_names) %>% filter(!value %in% colnames(CFB10)) %>% count(value) %>% arrange(desc(n))
+colnames(conf10features.exc) <- c("Feature", "Occurances")
+```
+
+For this question we explore the features that are most correlated to the ratio of games that a team wins. Then, we perform the same analysis within each conference to see if some features are more important in different conferences.
+
+
+
+
+
+### Non-Conference Specific
+
+The table below shows the top 10 features that have the highest correlation values to winning. Unsurprisingly, many of the top 10 features are related to scoring points. Others that come towards the end of the list, such as offensive yards scored, first downs, and scoring defense rank, show more insight into what features may help gain more points.
+
+The plots below show a sample of the features plotted against winning ratio.
+
+```{r top correlations}
+CFB10cors <- as_tibble(Top10Cor(CFB)[[2]])
+head(CFB10cors,n = 10)
+```
+
+
+```{r correlation plots}
+ex_plot1 <- ggplot(data = CFB10, aes(x=Win.Ratio, y= PAT)) + geom_point(color = "blue", alpha = 0.4, size = 2) + geom_smooth(method = lm, color = "black") + ylab("Points After\n Touchdown") + xlab("Ratio of Games Won")
+
+ex_plot2 <- ggplot(data = CFB10, aes(x=Win.Ratio, y= Off.TDs)) + geom_point(color = "blue", alpha = 0.4, size = 2) + geom_smooth(method = lm, color = "black") + ylab("Offensive\n Touchdowns") + xlab("Ratio of Games Won") 
+
+ex_plot3 <- ggplot(data = CFB10, aes(x=Win.Ratio, y= Avg.Points.per.Game.Allowed)) + geom_point(color = "blue", alpha= 0.4, size = 2) + geom_smooth(method = lm, color = "black") + ylab("Average Points\n Allowed per Game") + xlab("Ratio of Games Won")
+
+ex_plot4 <- ggplot(data = CFB10, aes(x=Win.Ratio, y= Off.Yards)) + geom_point(color = "blue", alpha = 0.4, size = 2) + geom_smooth(method = lm, color = "black") + ylab("Season Offensive\n Yards Gained") + xlab("Ratio of Games Won")
+
+grid.arrange(ex_plot1,ex_plot2, ex_plot3, ex_plot4, top = "Correlation plots of features 2,4,6,8")
+
+```
+
+
+
+
+
+### Conference Specific
+
+The top 10 features for each of the eleven conferences showed lots of variation compared to the non conference-specific computation. There were `r num.exc` features that appeared in the conference-specific top 10 lists that did not appear in the overall top 10 list. 
+
+The next two tables show the most common features on the conference specific lists. 
+
+The table below is a summary of the six features that appeared the most on the conference top 10 lists; unsurprisingly, all of these appeared in the overall top 10 list.  
+
+```{r conference features}
+head(conf10features)
+```
+
+
+
+
+
+These results show that the top 6 features appear in many of the conferences' top 10, but not all of them. This means that they are likely highly ranked when they do appear.
+
+The table below shows the six features NOT on the overall top 10 list that appeared the most often across the conference specific lists.
+
+
+
+
+
+```{r conference exclusive features}
+head(conf10features.exc)
+```
+
+From these results, we can see that there are many other important features that can contribute to winning. Certain features are more important in different conferences as well, given the variation in how many appear and how often.
+
+One caveat to this conference specific calculation is that it cut the sample size for the correlation calculations, which may help explain why there was so much variance in the top 10 features between conferences and when compared to overall.
+
+
+
+
+
+## Correlation Between Offensive and Defensive Play
+
+In this section, we explored the data specific to offensive and defensive statistics for each team. Our goal was to find a correlation between offensive and defensive performance within the teams. 
+  
+First, we took a look at the correlation between offensive and defensive ranks between each team.
+
+
+
+
+
+### Offensive and Defensive Rankings
+
+
+
+
+
+```{r Load the Data, message=FALSE, warning=FALSE}
+football = read.csv('CFB2019.csv', stringsAsFactors = FALSE)
+
+beginp = unlist(lapply(gregexpr(pattern = "\\(", football$Team), max))
+endp = unlist(lapply(gregexpr(pattern = '\\)', football$Team), max))
+conf = character(130)
+
+for(i in 1:130){
+  conf[i] = substr(football$Team[i],beginp[i]+1,endp[i]-1)
+}
+football$Conference = conf
+```
+
+```{r Overall Off/Def rank comparison}
+ggplot(data = football, aes(x= football$Off.Rank, y= football$Def.Rank)) + geom_point() + ggtitle('Rank Comparison',sprintf("Correlation: %f",cor(x= football$Off.Rank, y= football$Def.Rank))) + stat_smooth(method = "lm", se = FALSE)
+```
+
+
+
+
+
+At a first glance, we weren't able to gather the information we were looking for. Not only are the datapoints in the above graph spread out throughout the entire space, but the correlation between the rankings was found to be 0.045477. The correlation being so close to 0 told us that we needed to get more specific by taking a look at offensive/defensive rankings in different scenarios during gameplay. 
+  
+Below, we looked at the correlation between offensive and defensive rankings in the context of rushing, passing, and while in the Redzone, respectively. 
+  
+  
+  
+  
+  
+```{r Rush/Pass/Redzone Ranking Comparison}
+p1 = ggplot(data = football,aes(x= football$Rushing.Off.Rank, y= football$Rushing.Def.Rank)) + geom_point() + ggtitle('Rushing Rank Comparison',sprintf("Correlation: %f",cor(x= football$Rushing.Off.Rank, y= football$Rushing.Def.Rank))) + stat_smooth(method = "lm", se = FALSE)
+
+p2 = ggplot(data = football,aes(x= football$Passing.Off.Rank, y= football$Pass.Def.Rank)) + geom_point() + ggtitle('Passing Rank Comparison',sprintf("Correlation: %f",cor(x= football$Passing.Off.Rank, y= football$Pass.Def.Rank))) + stat_smooth(method = "lm", se = FALSE)
+
+p3 = ggplot(data = football, aes(x= football$Redzone.Off.Rank, y= football$Redzone.Def.Rank)) + geom_point() + ggtitle('Redzone Rank Comparison',sprintf("Correlation: %f",cor(x= football$Redzone.Off.Rank, y= football$Redzone.Def.Rank))) + stat_smooth(method = "lm", se = FALSE)
+
+plot_grid(p1,p2,p3, align = "v")
+```
+
+
+
+
+
+Here, we saw that there's a slightly positive (between 0.1 and 0.2) correlation between offensive/defensive ranks for both Redzone play and rushing. Meanwhile, the correlation between offensive and defensive ranks for passing is slightly negative at -0.125777. These correlations were a huge improvement over the overall rankings, and they let us know that ranking tendencies (offensive/defensive performance) can differ depending on the situation. 
+  
+
+
+
+
+### Rushing/Passing Yards Per Game
+  
+With this, we decided to look at the data for each team's yards per game advanced vs. yards per game allowed. We looked at the rushing yards first, followed by passing yards. 
+
+
+
+
+```{r Yard Comparisons}
+ggplot(data = football, aes(x= football$Rushing.Yards.per.Game, y= football$Rush.Yards.Per.Game.Allowed)) + geom_point() + ggtitle('Yards per Game Advanced vs. Allowed - Rushing',sprintf("Correlation: %f",cor(x= football$Rushing.Yards.per.Game, y= football$Rush.Yards.Per.Game.Allowed))) + stat_smooth(method = "lm", se = FALSE)
+
+ggplot(data = football, aes(x= football$Pass.Yards.Per.Game, y= football$Pass.Yards.Per.Game.Allowed)) + geom_point() + ggtitle('Yards per Game Advanced vs. Allowed - Passing',sprintf("Correlation: %f",cor(x= football$Pass.Yards.Per.Game, y= football$Pass.Yards.Per.Game.Allowed))) + stat_smooth(method = "lm", se = FALSE)
+```
+
+
+
+
+
+Right away, we noticed the negative correlation of rushing yards advanced vs. allowed. This actually shows that when it comes to rushing yards, there is some evidence that having high advancing yards per game, then yards allowed will be fairly small and vice versa. This means that offensive and defensive both perform at a high level in this situation. However, in the case of passing yards, there's actually a slight positive correlation, meaning that high-performing offenses has some correlation to low-performing defenses and vice versa. It is a weak positive correlation, but it is some correlation at the very least. 
+
+
+
+  
+```{r comparing conferences}
+conferences = unique(football$Conference)
+
+ypg.pass.off = numeric(11)
+ypg.pass.def = numeric(11)
+
+ypg.rush.off = numeric(11)
+ypg.rush.def = numeric(11)
+
+
+
+for(i in 1:11){
+  ypg.pass.off[i] = mean(football$Pass.Yards.Per.Game[football$Conference == football$Conference[i]])
+  ypg.pass.def[i] = mean(football$Pass.Yards.Per.Game.Allowed[football$Conference == football$Conference[i]])
+  
+  ypg.rush.off[i] = mean(football$Rush.Yards.Per.Game[football$Conference == football$Conference[i]])
+  ypg.rush.def[i] = mean(football$Rush.Yards.Per.Game.Allowed[football$Conference == football$Conference[i]])
+}
+
+df = data.frame(unique(football$Conference), ypg.pass.off, ypg.pass.def, stringsAsFactors = FALSE)
+
+dfm = melt(df,id.vars = 1)
+
+ggplot(data = dfm,mapping = aes(x = dfm$unique.football.Conference, y = value), ) + geom_col(aes(fill = variable),position = "dodge") + xlab('Conference') + ylab('Yards Per Game') + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + ggtitle('Passing Yards Per Game')
+
+
+df2 = data.frame(unique(football$Conference), ypg.rush.off, ypg.rush.def, stringsAsFactors = FALSE)
+
+df2m = melt(df2,id.vars = 1)
+
+ggplot(data = df2m,mapping = aes(x = dfm$unique.football.Conference, y = value), ) + geom_col(aes(fill = variable),position = "dodge") + xlab('Conference') + ylab('Yards Per Game') + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + ggtitle('Rushing Yards Per Game')
+```
+
+
+
+
+As shown in the figures above, there isn't strong evidence that any conference achieves higher defensive performance over offensive performance in regards to Rushing Yards Per Game, or vice versa. In terms of Passing Yards Per Game, on the other hand, the ACC, Big Ten, MAC, and Sun Belt have higher defensive Yards Per Game Allowed, implying lower defensive performance. Additionally, the AAC, Big 12, C-USA, FBS Independent, Pac-12, and SEC have higher offensive Yards Per Game, corresponding to a higher offensive performance in terms of Passing Yards. Additionally, it doesn't appear that any conference in particular plays with offense or defense in favor, since the offense and defense averages within each conference are relatively close to each other.
+  
+Concluding this segment of the analysis, we looked at the data for 4th down conversions achieved against that of the opposing team in each game. We also looked at the correlation between touchdowns achieved vs. touchdowns allowed.
+  
+  
+### 4th Down Conversions/Touchdowns
+
+
+
+
+```{r Comparing TDs and 4th Down Conversions}
+ggplot(data = football, aes(x= football$X4th.Conversions, y= football$Opp.4th.Conversion)) + geom_point() + ggtitle('4th Down Conversion Comparison',sprintf("Correlation: %f",cor(x= football$X4th.Conversions, y= football$Opp.4th.Conversion))) + stat_smooth(method = "lm", se = FALSE)
+
+ggplot(data = football, aes(x= football$Touchdowns, y= football$Touchdowns.Allowed)) + geom_point() + ggtitle('Touchdown Comparison',sprintf("Correlation: %f",cor(x= football$Touchdowns, y= football$Touchdowns.Allowed))) + stat_smooth(method = "lm", se = FALSE)
+
+
+```
+
+
+
+
+
+In regards to the chart showing 4th down conversions, a correlation of -0.008233 allowed us to conclude that there is no discernable correlation between the amount of 4th down conversions between each team. However, in terms of the correlation between touchdowns achieved vs. allowed, a correlation of -.325442 constitutes some negative correlation. In other words, there is some evidence that a high-performing offense that scores a lot of touchdowns has some correlation with a high-performing defense that allow relatively few touchdowns from the opposing team.
+
+
+
+
+  
+```{r comparing conferences 2}
+fourth.down.off = numeric(11)
+fourth.down.def = numeric(11)
+
+td.off = numeric(11)
+td.def = numeric(11)
+
+
+
+for(i in 1:11){
+  fourth.down.off[i] = mean(football$X4th.Conversions[football$Conference == football$Conference[i]])
+  fourth.down.def[i] = mean(football$Opp.4th.Conversion[football$Conference == football$Conference[i]])
+  
+  td.off[i] = mean(football$Touchdowns[football$Conference == football$Conference[i]])
+  td.def[i] = mean(football$Touchdowns.Allowed[football$Conference == football$Conference[i]])
+}
+
+df = data.frame(unique(football$Conference), fourth.down.off, fourth.down.def, stringsAsFactors = FALSE)
+
+dfm = melt(df,id.vars = 1)
+
+ggplot(data = dfm,mapping = aes(x = dfm$unique.football.Conference, y = value), ) + geom_col(aes(fill = variable),position = "dodge") + xlab('Conference') + ylab('Conversions') + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + ggtitle('4th Down Conversions')
+
+df2 = data.frame(unique(football$Conference), td.off, td.def, stringsAsFactors = FALSE)
+
+df2m = melt(df2,id.vars = 1)
+
+ggplot(data = df2m,mapping = aes(x = dfm$unique.football.Conference, y = value), ) + geom_col(aes(fill = variable),position = "dodge") + xlab('Conference') + ylab('Touchdowns') + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + ggtitle('Touchdowns')
+```
+
+
+
+
+
+Furthermore, we saw that there is a tendency across all conferences to achieve about twice as many 4th Down Conversions as they allow. This didn't give us very much information about the correlation between offensive and defensive performance across conferences, so we decided to focus our energy on analyzing the overall amount of Touchdowns over a season. One should take note of the bars representing Touchdowns for the AAC, Big 12, and SEC. The height level between the offensive and defensive bars are significantly different compared to the rest of the conferences. This is due to having much higher defensive performance since the amount of Touchdowns allowed is much lower compared to the other conferences. The conferences with a higher value for Touchdowns Allowed, subsequently, tend to have much lower-performing defenses, which causes high allowance of Touchdowns by the opposing team. We did see variation in offensive vs. defensive performance across the conferences, but there wasn't enough clear variation across the board that tells us if any conference favors offensive or defensive play over the other. 
+
+ 
+
+# **Conclusion**
+
+### Summary: Predictions of Football Statistics
+
+We found that we can predict the average amount of points per game by using our linear regression model for any combination of football statistics. Furthermore, the same model can be run for any  football statistic being the response variable, not only for average points per game. However, the caveat with this is that we must choose different predictors  since the predictors neet to have a high correlation with the response variable. 
+
+### Summary: Features That Lead To Wins
+
+In this portion of the study, our results revealed the top features that correlated to winning. Most of these features were directly related to the amount of points scored, which is unsurprising given that points win games. However, the features identified that don’t directly involve scoring points can offer more insight into what factors are important for scoring points and winning. When this analysis is done per conference, we found many more factors that play a role in helping teams win, some of which are more important in some conferences over others.
+
+### Summary: Offensive vs. Defensive Play
+
+In the data we explored, we did not find any strong correlation between offensive and defensive performance in a football team. All of the correlation values were below 0.32 (by absolute value), which are weak correlations. Also, it makes sense in the context of the game because some teams have great defense with a terrible offense, a great offense with a terrible defense, or any combination of those traits for a team. The offensive performance generally doesn't have a large effect on the defensive performance, and vice versa. Therefore, there is not a strong correlation between offense and defense performance.
+
+### Improvements to be Made
+
+One thing that could be used to improve the analysis for finding winning features is to perform more correlations between the identified top features that related directly to scoring points and the rest of the data set. This would expand on our current analysis, which found that most important features were tied to scoring points, by identifying which features help teams score more points and therefore win more.
+
+Something that could improve the analysis of offensive vs. defensive play is having data for multiple past years as well so we can dig deeper into the trends year to year. After all, the year that we have the data for could be an outlier in the overall trend of offensive/defensive play. 
+
+### Validity of Our Data
+
+Our dataset was found on Kaggle.com where it was posted by Jeff Gallini. From his description of the data, it was found on the NCAA statistics website, https://www.ncaa.com/stats/football/fbs. He organized and made the data easier to read by the average person before posting it. Given the origin of the data and Jeff's transparency in writing his dataset description, the data he provided us has a high validity.
+
+### Limitations 
+
+A limitation of performing the analyses by conference is that it has a much smaller data set used, which could lead to more variation in the results. This limitation would be reduced much more if we had more data to work with. This is also a limitation of the whole study because we would have much more accurate results with data from previous years. 
+
+### Additional Questions to Answer
+
+One additional question that could be answered would be predicting what team would be most likely to win in the future; however, this requires additional data sets for past years.
+

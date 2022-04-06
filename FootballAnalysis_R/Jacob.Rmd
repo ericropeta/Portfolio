@@ -1,0 +1,77 @@
+---
+title: "STT 180 Project"
+author: "Jacob Haywood"
+date: "4/21/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE}
+data <- read.csv("CFB2019.csv")
+
+data$Top <- c(rep(0,130))
+data$Top[53] <- 1 #LSU
+data$Top[22] <- 1 #Clemson
+data$Top[78] <- 1 #OSU
+data$Top[35] <- 1 #Georgia
+data$Top[83] <- 1 #Oregon
+data$Top[31] <- 1 #Florida
+data$Top[79] <- 1 #Oklahoma
+data$Top[3] <- 1 #Alabama
+data$Top[85] <- 1 #Penn State
+data$Top[63] <- 1 #Minnesota
+data$Top[129] <- 1 #Wisconsin
+data$Top[76] <- 1 #Notre Dame
+data$Top[12] <- 1 #Baylor
+data$Top[10] <- 1 #Auburn
+data$Top[42] <- 1 #Iowa
+data$Top[116] <- 1 #Utah
+data$Top[57] <- 1 #Memphis
+data$Top[60] <- 1 #Michigan
+data$Top[4] <- 1 #Appelachian State
+data$Top[66] <- 1 #Navy
+data$Top[21] <- 1 #Cincinnati
+data$Top[1] <- 1 #Air Force
+data$Top[13] <- 1 #Boise State
+data$Top[112] <- 1 #UCF
+data$Top[103] <- 1 #Texas
+library(dplyr)
+
+data <- data[sapply(data,is.numeric)]
+```
+
+
+```{r,echo=FALSE}
+corrs <- c()
+for (i in colnames(data)){
+  corrs[i] <- cor(data["Points.Per.Game"],data[i])
+}
+#Off.Rank,  Off.Plays,  Off.Yards  First.Downs
+```
+
+```{r,echo=FALSE}
+x <- data.frame(data$Points.Per.Game,data$Off.Rank,data$Off.Plays,data$Off.Yards,data$First.Downs, data$Top)
+
+pairs(x,pch=19)
+```
+
+
+```{r}
+fit <- lm(Points.Per.Game ~ Off.Rank + Off.Plays + Off.Yards + First.Downs + Top, data = data)
+summary(fit)
+bhat <- coef(fit)
+intercept <- bhat[1] + 5*bhat[2] + 800*bhat[3] + 400*bhat[5] + 1*bhat[6]
+slope <- bhat[4]
+yards <- seq(from=3000,to=9000,by=1)
+
+
+plot(Points.Per.Game ~ Off.Yards, data = data)
+lines(x=yards,y=intercept+yards*slope, col = 2)
+```
+
+ For my question, I decided to use Bayesian statistics to model a linear regression based on highly-correlated predictors. My predictors were as follows: Offensive Rank, Offensive Plays, Offensive Yards, First Downs, and whether they were ranked on AP Poll. These explanatory variables were chosen due to the results of our correlation test, which stated that these variables correlated the most with our chosen response variable, average points per game. As a result, we were able to model the average points per game for a team that has an offensive rank of 5, has 800 offensive plays, 400 first downs, and is a ranked AP Poll team. We can run this linear regression model for any combination of football statistics to predict our average points per game. Likewise, the same model can be run for any response variable football statistic, not just average points per game, but different predictors must be chosen because the predictors must be highly correlated with the response variable. Thus, another correlation test must be done to choose a new response variable. The visualization techniques we used were very straightforward, with just a regular plot to plot our data points and linear regression model. The only package we used for this question was the dplyr package to filter and sort our initial data set.
+
+

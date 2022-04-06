@@ -1,0 +1,161 @@
+---
+title: "Project Writeup"
+author: "Marie Camp"
+date: "4/26/2020"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: false
+    toc_float: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      message = FALSE, 
+                      warning = FALSE,
+                      comment = NA)
+```
+
+```{r load, echo=FALSE, inlcude = FALSE}
+library(tidyverse)
+library(knitr)
+library(gridExtra)
+```
+
+## Which features translate into wins?
+
+```{r winning features code, include = FALSE}
+
+# Loads data and splits team and conference into separate columns
+
+CFB <- read.csv("CFB2019.csv", header=TRUE, stringsAsFactors = FALSE)
+# separate team and conference name
+# conference moved to own column (second column), with parentheses stripped
+num_teams <- nrow(CFB)
+all_teams <- character(num_teams)
+all_confs <- character(num_teams)
+for (i in 1:num_teams) {
+  raw <- unlist(strsplit(CFB[i,1], " "))
+  conf_ind <- grep('\\(', raw) # search for starting index of conference
+  if (length(conf_ind) > 1) {
+    conf_ind <- conf_ind[length(conf_ind)] # in the cases of miami(OH) and miami(FL), take the second parentheses
+  }
+  team_name <- paste(raw[1:conf_ind-1], collapse = " ")
+  conference <- paste(raw[conf_ind:length(raw)], collapse = " ")
+  last_p <- nchar(conference) - 1 # index before last parenthesis
+  conference <- substr(conference,2,last_p) # strip parentheses
+  all_teams[i] <- team_name
+  all_confs[i] <- conference
+}
+CFB$Team <- all_teams
+CFB$Conference <- all_confs
+CFB <- CFB[c(1,147,2:146)] # reorder so that conference is second column
+
+# Transform winning record into a win ratio and add to data frame
+
+win_ratios <- numeric(num_teams)
+for (i in 1:num_teams) {
+  gamesplayed <- CFB[i,3]
+  win_loss <- unlist(strsplit(CFB[i,4],""))
+  dash_ind <- grep("-",win_loss)
+  wins <- paste(win_loss[1:dash_ind-1], collapse="")
+  wins <- as.numeric(wins)
+  win_ratios[i] <- round(wins / gamesplayed,2)
+}
+CFB$Win.Ratio <- win_ratios
+CFB <- CFB[c(1:4,148,5:147)] # win ration is 5th column
+
+# Create a data frame with the top 10 varaibles that most correlate to a high winning record
+
+Top10Cor <- function(cfb_df) {
+  CFB_numeric <- cfb_df[,c(5:137,140:148)] #pull only numeric variables
+  corr_values <- round(cor(CFB_numeric[, 1],CFB_numeric), 2) #calculate corr to win ratio
+  names(corr_values) <- colnames(CFB_numeric)
+  corr_values <- abs(corr_values) #absolute values
+  corr_order <- order(corr_values, decreasing = TRUE) # get indices in data set for decreasing order of correlation
+  top10 <- CFB_numeric[c(corr_order[1:11])] #get data for top 10 correlated WIN RATIO IN FIRST COL
+  corr_values <- sort(corr_values, decreasing = TRUE)
+  correlations <- data_frame(row.names = names(corr_values[-1]), corr_values[-1])
+  colnames(correlations) <- c("Feature","Correlation to Wins")
+  return(list(top10,correlations))
+}
+CFB10 <- Top10Cor(CFB)[[1]] # for overall correlations not by conference
+
+# Calculate by conference
+
+# this creates a data frame with each conference as a row
+# columns are labled 1-10 for first through tenth top features
+# the variable names of the top features per conference are recorded in each cell
+conf_names <- unique(CFB$Conference)
+conf10_feature_names <- data.frame(row.names = conf_names)
+for (i in 1:length(conf_names)) {
+  conf10 <- filter(CFB, Conference == conf_names[i]) %>% Top10Cor() 
+  conf10 <- conf10[[1]]
+  conf10_feature_names[i,1:10] <- colnames(conf10[-1])
+}
+colnames(conf10_feature_names) <- c(1,2,3,4,5,6,7,8,9,10)
+
+# tabulate how often each variable appears in each ranking column
+# aka what are the most common features in all of the conference top 10s
+conf10features <- gather(conf10_feature_names) %>% count(value) %>% arrange(desc(n))
+colnames(conf10features) <- c("Feature", "Occurances")
+
+# number of features that appeared exclusively in the conference specific top 10s that weren't in the overall list
+num.exc <- length(setdiff(unique(conf10features$Feature), colnames(CFB10[-1])))
+
+# tabulates how many times each "exlclusive" feature appears in all the conference specific lists
+conf10features.exc <- gather(conf10_feature_names) %>% filter(!value %in% colnames(CFB10)) %>% count(value) %>% arrange(desc(n))
+colnames(conf10features.exc) <- c("Feature", "Occurances")
+```
+
+For this question we explore the features that are most correlated to the ratio of games that a team wins. Then, we perform the same analysis within each conference to see if some features are more important in different conferences.
+
+### Non-Conference Specific
+
+The table below shows the top 10 features that have the highest correlation values to winning. Unsurprisingly, many of the top 10 features are related to scoring points. Others that come towards the end of the list, such as offensive yards scored, first downs, and scoring defense rank, show more insight into what features may help gain more points.
+
+The plots below show a sample of the features plotted against winning ratio.
+
+```{r top correlations}
+CFB10cors <- as_tibble(Top10Cor(CFB)[[2]])
+head(CFB10cors,n = 10)
+```
+
+
+```{r correlation plots}
+ex_plot1 <- ggplot(data = CFB10, aes(x=Win.Ratio, y= PAT)) + geom_point(color = "blue", alpha = 0.4, size = 2) + geom_smooth(method = lm, color = "black") + ylab("Points After\n Touchdown") + xlab("Ratio of Games Won")
+
+ex_plot2 <- ggplot(data = CFB10, aes(x=Win.Ratio, y= Off.TDs)) + geom_point(color = "blue", alpha = 0.4, size = 2) + geom_smooth(method = lm, color = "black") + ylab("Offensive\n Touchdowns") + xlab("Ratio of Games Won") 
+
+ex_plot3 <- ggplot(data = CFB10, aes(x=Win.Ratio, y= Avg.Points.per.Game.Allowed)) + geom_point(color = "blue", alpha= 0.4, size = 2) + geom_smooth(method = lm, color = "black") + ylab("Average Points\n Allowed per Game") + xlab("Ratio of Games Won")
+
+ex_plot4 <- ggplot(data = CFB10, aes(x=Win.Ratio, y= Off.Yards)) + geom_point(color = "blue", alpha = 0.4, size = 2) + geom_smooth(method = lm, color = "black") + ylab("Season Offensive\n Yards Gained") + xlab("Ratio of Games Won")
+
+grid.arrange(ex_plot1,ex_plot2, ex_plot3, ex_plot4, top = "Correlation plots of features 2,4,6,8")
+
+```
+
+### Conference Specific
+The top 10 features for each of the eleven conferences showed lots of variation compared to the non conference-specific computation. There were `r num.exc` features that appeared in the conference-specific top 10 lists that did not appear in the overall top 10 list. 
+
+The next two tables show the most common features on the conference specific lists. 
+
+The table below is a summary of the six features that appeared the most on the conference top 10 lists; unsurprisingly, all of these appeared in the overall top 10 list.  
+
+```{r conference features}
+head(conf10features)
+```
+
+These results show that the top 6 features appear in many of the conferences' top 10, but not all of them. This means that they are likely highly ranked when they do appear.
+
+The table below shows the six features NOT on the overall top 10 list that appeared the most often across the conference specific lists.
+
+```{r conference exclusive features}
+head(conf10features.exc)
+```
+
+From these results, we can see that there are many other important features that can contribute to winning. Certain features are more important in different conferences as well, given the variation in how many appear and how often.
+
+One caveat to this conference specific calculation is that it cut the sample size for the correlation calculations, which may help explain why there was so much variance in the top 10 features between conferences and when compared to overall.
