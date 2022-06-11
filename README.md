@@ -1,7 +1,7 @@
 # Portfolio - Eric Ropeta
 
 
-Hello! My name is Eric, and I currently reside in East Lansing, MI, where I attend Michigan State University as a senior. In May 2022, I will be graduating from MSU with a Bachelor of Science in Computational Mathematics, where my focus has been on data science and analytics. 
+Hello! My name is Eric, and I currently reside in East Lansing, MI, where in May 2022, I graduated from Michigan State University with a Bachelor of Science degree in Computational Mathematics with a concentration in data science and analytics.
 
 
 This portfolio serves as a compilation of the complete school projects that I've either written myself or contributed to. 
